@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.gradio/
+flagged/
+# Generated at start-up (Hugging Face Spaces rejects binaries pushed with plain git)
+samples/*.pdf
+.DS_Store

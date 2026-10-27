@@ -1,0 +1,9 @@
+# Runtime dependencies for the Hugging Face Space.
+# Gradio itself is installed by the Space from `sdk_version` in README.md.
+torch
+sentence-transformers>=3.0
+faiss-cpu>=1.8
+pypdf>=4.0
+huggingface_hub>=0.25
+numpy
+reportlab>=4.0

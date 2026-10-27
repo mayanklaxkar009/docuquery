@@ -1,0 +1,4 @@
+# Everything needed to run the app and the tests on your own machine.
+-r requirements.txt
+gradio==6.30.0
+pytest>=8.0

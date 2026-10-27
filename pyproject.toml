@@ -1,0 +1,11 @@
+[project]
+name = "docuquery"
+version = "0.1.0"
+description = "Retrieval-augmented question answering over PDF documents"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Mayank Kumar Laxkar" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
