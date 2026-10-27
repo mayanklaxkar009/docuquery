@@ -23,14 +23,13 @@ if not SAMPLE_PDF.exists():  # generated, not committed: Spaces rejects plain-gi
     SAMPLE_PDF.parent.mkdir(exist_ok=True)
     build(SAMPLE_PDF)
 
-# The embedding model and LLM client are loaded once and shared by every
+# The embedder (if any) and LLM client are created once and shared by every
 # visitor; each browser session gets its own private document index.
 _shared = RAGPipeline(SETTINGS)
-_ = _shared.embedder  # warm the model at start-up, not on the first click
 
 
 def _new_session_pipeline() -> RAGPipeline:
-    return RAGPipeline(SETTINGS, embedder=_shared.embedder, llm=_shared.llm)
+    return RAGPipeline(SETTINGS, embedder=_shared.embedder, llm=_shared.llm, retrieval=_shared.retrieval)
 
 
 def _format_sources(answer) -> str:
@@ -88,21 +87,18 @@ def respond(message, chat_history, pipeline):
     return "", chat_history, _format_sources(answer)
 
 
-from rag.embeddings import KeywordEmbedder  # noqa: E402
-
-embed_label = (
-    "keyword matching (set HF_TOKEN for semantic search)"
-    if isinstance(_shared.embedder, KeywordEmbedder)
-    else SETTINGS.embedding_model
+retrieval_label = (
+    f"dense embeddings ({SETTINGS.embedding_model}, {_shared.store.backend})"
+    if _shared.retrieval == "dense"
+    else "BM25 keyword ranking"
 )
-llm_label = SETTINGS.llm_model if _shared.llm else "extractive mode (set HF_TOKEN to enable the LLM)"
+llm_label = _shared.llm.name if _shared.llm else "extractive mode (set GROQ_API_KEY to enable the LLM)"
 
 with gr.Blocks(title="DocuQuery: chat with your PDFs") as demo:
     gr.Markdown(
         "# DocuQuery\n"
         "Ask questions about your PDFs. Answers come only from your documents and cite the page they used.\n\n"
-        f"<small>Embeddings: `{embed_label}` · Vector search: "
-        f"`{_shared.store.backend}` · LLM: `{llm_label}`</small>"
+        f"<small>Retrieval: `{retrieval_label}` · LLM: `{llm_label}`</small>"
     )
     session = gr.State(None)
 

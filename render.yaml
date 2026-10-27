@@ -4,6 +4,7 @@ services:
     name: docuquery
     runtime: python
     plan: free
+    region: frankfurt
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
     healthCheckPath: /
@@ -12,5 +13,5 @@ services:
         value: 3.11.9
       - key: GRADIO_ANALYTICS_ENABLED
         value: "False"
-      - key: HF_TOKEN
-        sync: false # set in the Render dashboard; never commit it
+      - key: GROQ_API_KEY
+        sync: false # free key from console.groq.com; set it in the Render dashboard, never commit it
