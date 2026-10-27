@@ -4,10 +4,13 @@ Hugging Face Spaces, which starts this file automatically."""
 from __future__ import annotations
 
 import html
+import sys
+print("DocuQuery: process started", flush=True)
 import logging
 from pathlib import Path
 
 import gradio as gr
+print("DocuQuery: gradio imported", flush=True)
 
 try:  # Hugging Face ZeroGPU hardware expects at least one @spaces.GPU function.
     import spaces
@@ -20,6 +23,7 @@ except ImportError:
 
 from rag.config import Settings
 from rag.pipeline import RAGPipeline
+print("DocuQuery: rag imported", flush=True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -34,7 +38,9 @@ if not SAMPLE_PDF.exists():  # generated, not committed: Spaces rejects plain-gi
 # The embedding model and LLM client are loaded once and shared by every
 # visitor; each browser session gets its own private document index.
 _shared = RAGPipeline(SETTINGS)
-_ = _shared.embedder  # warm the model at start-up, not on the first click
+print("DocuQuery: loading embedder", flush=True)
+_ = _shared.embedder
+print("DocuQuery: embedder ready", flush=True)  # warm the model at start-up, not on the first click
 
 
 def _new_session_pipeline() -> RAGPipeline:
