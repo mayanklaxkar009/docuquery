@@ -60,7 +60,7 @@ def embedder():
 
 @pytest.fixture
 def settings():
-    return Settings(hf_token=None, chunk_size=300, chunk_overlap=60, top_k=3, min_score=0.1)
+    return Settings(hf_token=None, llm_api_key=None, chunk_size=300, chunk_overlap=60, top_k=3, min_score=0.1)
 
 
 @pytest.fixture

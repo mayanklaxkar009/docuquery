@@ -53,7 +53,7 @@ def test_extractive_mode_without_token(settings, embedder, sample_pdf):
     assert p.llm is None
     p.index_files([sample_pdf])
     answer = p.ask("What is chunk overlap for?")
-    assert answer.mode == "extractive" and "HF_TOKEN" in answer.note
+    assert answer.mode == "extractive" and "API key" in answer.note
 
 
 def test_unrelated_question_is_refused(settings, embedder, sample_pdf):

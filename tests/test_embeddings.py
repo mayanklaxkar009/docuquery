@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from rag.embeddings import HFInferenceEmbedder, KeywordEmbedder, make_embedder
+from rag.embeddings import HFInferenceEmbedder, make_embedder
 
 
 class FakeClient:
@@ -54,9 +54,6 @@ def test_api_embedder_retries(monkeypatch):
         HFInferenceEmbedder("m", "t", retries=2, client=FakeClient(fail_times=5)).embed(["x"])
 
 
-def test_keyword_embedder_and_no_token_fallback():
-    e = make_embedder("m", token=None)
-    assert isinstance(e, KeywordEmbedder)
-    v = e.embed(["vector search with faiss", "faiss vector index", "banana bread"])
-    assert v[0] @ v[1] > v[0] @ v[2]
-    assert e.embed([]).shape == (0, e.dim)
+def test_make_embedder_defaults_to_bm25():
+    assert make_embedder("m", token="t", backend="bm25") is None
+    assert make_embedder("m", token=None, backend="api") is None  # no token -> BM25
