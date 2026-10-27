@@ -15,29 +15,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      # Tests use a fake embedder and fake LLM, so no PyTorch or model downloads.
+      # Tests use a fake embedder and fake LLM, so no API calls or model downloads.
       - name: Install test dependencies
         run: pip install numpy pypdf faiss-cpu huggingface_hub reportlab pytest
       - name: Run tests
         run: pytest -q
-
-  deploy:
-    # Every green push to main is mirrored to the Hugging Face Space.
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Push to Hugging Face Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_SPACE: ${{ vars.HF_SPACE }} # e.g. your-username/docuquery
-        run: |
-          if [ -z "$HF_TOKEN" ] || [ -z "$HF_SPACE" ]; then
-            echo "HF_TOKEN secret or HF_SPACE variable not set; skipping deploy."
-            exit 0
-          fi
-          HF_USER="${HF_SPACE%%/*}"
-          git push --force "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" HEAD:main
+# Deployment: Render watches this repo and redeploys every push to main (see render.yaml).

@@ -17,7 +17,7 @@ passages (`llm.build_messages`) and calls the LLM. Any LLM failure falls back to
 - **config.py**: frozen dataclass; every field reads an env var so the same code runs locally and on Spaces.
 - **loader.py**: pypdf text extraction; regexes repair hyphenated line breaks and wrapped lines. Image-only pages return no text and are skipped.
 - **chunker.py**: splits into sentences, packs them up to `chunk_size`, carries trailing sentences forward as overlap, hard-splits very long "sentences" (tables) on spaces. Chunks never cross pages.
-- **embeddings.py**: thin wrapper over sentence-transformers with normalised output. The `Embedder` Protocol is what lets tests inject a fake.
+- **embeddings.py**: `HFInferenceEmbedder` calls the Hugging Face Inference API in batches with retries and normalises the output; `KeywordEmbedder` is a no-network fallback; `make_embedder` picks one at start-up. The `Embedder` Protocol is what lets tests inject a fake.
 - **vector_store.py**: FAISS `IndexFlatIP` (exact search). With normalised vectors, inner product = cosine similarity. NumPy fallback gives identical rankings; a test proves it.
 - **llm.py**: the system prompt (answer only from passages, cite them, admit when not found), message building with recent history, HF `InferenceClient.chat_completion`, and the extractive fallback.
 - **pipeline.py**: orchestration, error handling per file, relevance threshold, fallback logic.
@@ -59,8 +59,8 @@ Hybrid search (BM25 + vectors) for exact terms like codes and names, a cross-enc
 OCR for scanned PDFs, streaming responses, and a persistent vector database.
 
 **How is it deployed?**
-GitHub Actions runs pytest on every push; if green, it pushes to a Hugging Face Space (Gradio SDK,
-free CPU). The inference token is a Space secret, never in the code.
+GitHub Actions runs pytest on every push; Render redeploys the free web service from `render.yaml`.
+The inference token is a Render environment secret, never in the code.
 
 ## Things to try yourself (so it's genuinely your work)
 

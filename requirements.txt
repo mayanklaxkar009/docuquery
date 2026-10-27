@@ -1,7 +1,6 @@
-# Runtime dependencies for the Hugging Face Space.
-# Gradio itself is installed by the Space from `sdk_version` in README.md.
-torch
-sentence-transformers>=3.0
+# Runtime dependencies. No PyTorch: embeddings come from the Hugging Face
+# Inference API, so the app fits in a small free instance (e.g. Render free).
+gradio==6.30.0
 faiss-cpu>=1.8
 pypdf>=4.0
 huggingface_hub>=0.25

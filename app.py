@@ -1,29 +1,17 @@
 """Gradio front end for DocuQuery. Runs locally (`python app.py`) and on
-Hugging Face Spaces, which starts this file automatically."""
+on hosts such as Render (which set $PORT) or Hugging Face Spaces."""
 
 from __future__ import annotations
 
 import html
-import sys
-print("DocuQuery: process started", flush=True)
+import os
 import logging
 from pathlib import Path
 
 import gradio as gr
-print("DocuQuery: gradio imported", flush=True)
-
-try:  # Hugging Face ZeroGPU hardware expects at least one @spaces.GPU function.
-    import spaces
-
-    @spaces.GPU
-    def _zerogpu_probe():  # never called; the app runs on CPU
-        return None
-except ImportError:
-    pass
 
 from rag.config import Settings
 from rag.pipeline import RAGPipeline
-print("DocuQuery: rag imported", flush=True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -38,9 +26,7 @@ if not SAMPLE_PDF.exists():  # generated, not committed: Spaces rejects plain-gi
 # The embedding model and LLM client are loaded once and shared by every
 # visitor; each browser session gets its own private document index.
 _shared = RAGPipeline(SETTINGS)
-print("DocuQuery: loading embedder", flush=True)
-_ = _shared.embedder
-print("DocuQuery: embedder ready", flush=True)  # warm the model at start-up, not on the first click
+_ = _shared.embedder  # warm the model at start-up, not on the first click
 
 
 def _new_session_pipeline() -> RAGPipeline:
@@ -102,13 +88,20 @@ def respond(message, chat_history, pipeline):
     return "", chat_history, _format_sources(answer)
 
 
+from rag.embeddings import KeywordEmbedder  # noqa: E402
+
+embed_label = (
+    "keyword matching (set HF_TOKEN for semantic search)"
+    if isinstance(_shared.embedder, KeywordEmbedder)
+    else SETTINGS.embedding_model
+)
 llm_label = SETTINGS.llm_model if _shared.llm else "extractive mode (set HF_TOKEN to enable the LLM)"
 
 with gr.Blocks(title="DocuQuery: chat with your PDFs") as demo:
     gr.Markdown(
         "# DocuQuery\n"
         "Ask questions about your PDFs. Answers come only from your documents and cite the page they used.\n\n"
-        f"<small>Embeddings: `{SETTINGS.embedding_model}` · Vector search: "
+        f"<small>Embeddings: `{embed_label}` · Vector search: "
         f"`{_shared.store.backend}` · LLM: `{llm_label}`</small>"
     )
     session = gr.State(None)
@@ -137,4 +130,9 @@ with gr.Blocks(title="DocuQuery: chat with your PDFs") as demo:
     send.click(respond, [question, chatbot, session], [question, chatbot, sources])
 
 if __name__ == "__main__":
-    demo.queue(default_concurrency_limit=2).launch()
+    # Render (and most hosts) pass the port in $PORT and need 0.0.0.0.
+    port = os.environ.get("PORT")
+    demo.queue(default_concurrency_limit=2).launch(
+        server_name="0.0.0.0" if port else None,
+        server_port=int(port) if port else None,
+    )

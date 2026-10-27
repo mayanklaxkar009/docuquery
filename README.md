@@ -5,7 +5,7 @@ colorFrom: indigo
 colorTo: blue
 sdk: gradio
 sdk_version: 6.30.0
-python_version: "3.10"
+python_version: "3.11"
 app_file: app.py
 pinned: false
 license: mit
@@ -16,7 +16,7 @@ short_description: Ask questions about your PDFs, with cited answers
 
 Upload PDFs and ask questions in plain English. DocuQuery finds the relevant passages with semantic search and has an open-source LLM answer **only from those passages**, citing the file and page for every claim.
 
-**Live demo:** https://huggingface.co/spaces/mayanklaxkar008/docuquery
+**Live demo:** https://docuquery.onrender.com (free instance: the first visit after a quiet spell takes about a minute to wake up)
 
 ## How it works
 
@@ -34,10 +34,10 @@ flowchart LR
 ```
 
 1. **Indexing.** Text is extracted page by page and cleaned (re-joined hyphenated words and wrapped lines). It is split into overlapping chunks that end on sentence boundaries and never cross pages, so every chunk maps to one page for citations.
-2. **Embedding.** Each chunk becomes a 384-dimensional vector from `sentence-transformers/all-MiniLM-L6-v2`, running on CPU. Vectors are L2-normalised, so inner product equals cosine similarity.
+2. **Embedding.** Each chunk becomes a 384-dimensional vector from `sentence-transformers/all-MiniLM-L6-v2`, computed through the Hugging Face Inference API in batches with retries. Keeping PyTorch out of the app lets it run in a 512 MB free instance. Vectors are L2-normalised, so inner product equals cosine similarity.
 3. **Retrieval.** The question is embedded the same way. A FAISS `IndexFlatIP` returns the top-k chunks. Chunks below a similarity threshold are dropped, so the app says "not found" instead of guessing.
 4. **Generation.** The surviving chunks are numbered and sent with the question to an open-weight chat model (default `Qwen/Qwen2.5-7B-Instruct`) through Hugging Face Inference Providers. The system prompt restricts it to the passages and requires `[n]` citations.
-5. **Graceful fallback.** If no token is set or the API fails, an extractive answerer returns the best-matching sentences with their citations, so the app always responds.
+5. **Graceful fallback.** If no token is set or the API fails, an extractive answerer returns the best-matching sentences with their citations, and retrieval falls back to keyword vectors, so the app always responds.
 
 ## Features
 
@@ -46,8 +46,8 @@ flowchart LR
 - Follow-up questions use recent chat history
 - Each visitor gets a private index; the models are loaded once and shared
 - "Try the sample" button with a built-in document
-- 30 unit tests that run in seconds with a fake embedder and fake LLM
-- CI on GitHub Actions; every green push to `main` deploys to the Space
+- Unit tests that run in seconds with fake embedders and a fake LLM (no network)
+- CI on GitHub Actions; Render redeploys every push to `main` from `render.yaml`
 
 ## Retrieval evaluation
 
@@ -61,22 +61,23 @@ CHUNK_SIZE=500 CHUNK_OVERLAP=100 python scripts/evaluate_retrieval.py
 ## Run locally
 
 ```bash
-git clone https://github.com/YOUR-GITHUB-USERNAME/docuquery.git
+git clone https://github.com/mayanklaxkar009/docuquery.git
 cd docuquery
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
-export HF_TOKEN=hf_xxx        # optional; without it answers are extractive
+export HF_TOKEN=hf_xxx        # optional; without it search is keyword-based and answers are extractive
 python app.py                 # open http://127.0.0.1:7860
 pytest -q
 ```
 
 ## Configuration
 
-All settings are environment variables (on Spaces: Settings → Variables and secrets).
+All settings are environment variables (on Render: the service's Environment tab).
 
 - `HF_TOKEN` (secret): Hugging Face token with "Make calls to Inference Providers" permission
 - `LLM_MODEL`: chat model id, default `Qwen/Qwen2.5-7B-Instruct`
 - `EMBEDDING_MODEL`: default `sentence-transformers/all-MiniLM-L6-v2`
+- `EMBEDDING_BACKEND`: `api` (default) or `local` (needs `pip install sentence-transformers`)
 - `CHUNK_SIZE` / `CHUNK_OVERLAP`: default 800 / 150 characters
 - `TOP_K`: chunks retrieved per question, default 4
 - `MIN_SCORE`: minimum cosine similarity to count as relevant, default 0.25
@@ -86,11 +87,12 @@ All settings are environment variables (on Spaces: Settings → Variables and se
 
 ```
 app.py                     Gradio UI and per-session state
+render.yaml                Render Blueprint (free web service)
 rag/
   config.py                settings from environment variables
   loader.py                PDF text extraction and cleaning
   chunker.py               sentence-aware overlapping chunks
-  embeddings.py            sentence-transformers wrapper
+  embeddings.py            HF Inference API embedder, keyword fallback, optional local model
   vector_store.py          FAISS index with NumPy fallback
   llm.py                   prompt building, HF Inference client, extractive fallback
   pipeline.py              indexing and question answering

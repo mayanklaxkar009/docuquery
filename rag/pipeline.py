@@ -52,9 +52,11 @@ class RAGPipeline:
     @property
     def embedder(self) -> Embedder:
         if self._embedder is None:
-            from rag.embeddings import SentenceTransformerEmbedder
+            from rag.embeddings import make_embedder
 
-            self._embedder = SentenceTransformerEmbedder(self.settings.embedding_model)
+            self._embedder = make_embedder(
+                self.settings.embedding_model, self.settings.hf_token, self.settings.embedding_backend
+            )
         return self._embedder
 
     def _default_llm(self) -> LLM | None:
@@ -117,7 +119,8 @@ class RAGPipeline:
             return Answer("Upload and index at least one PDF first.", [], "no_match")
 
         results = self.retrieve(question)
-        relevant = [r for r in results if r.score >= self.settings.min_score]
+        min_score = getattr(self.embedder, "min_score", self.settings.min_score)
+        relevant = [r for r in results if r.score >= min_score]
         if not relevant:
             return Answer(
                 "I could not find anything relevant to that question in the uploaded documents.",

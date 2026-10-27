@@ -1,0 +1,16 @@
+# Render Blueprint: one free web service running the Gradio app.
+services:
+  - type: web
+    name: docuquery
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GRADIO_ANALYTICS_ENABLED
+        value: "False"
+      - key: HF_TOKEN
+        sync: false # set in the Render dashboard; never commit it

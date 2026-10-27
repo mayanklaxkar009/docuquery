@@ -1,5 +1,5 @@
 """Runtime settings, read from environment variables so the same code runs
-locally and on Hugging Face Spaces (where secrets become env vars)."""
+locally and on the host (Render, Hugging Face Spaces), where secrets become env vars."""
 
 from __future__ import annotations
 
@@ -29,6 +29,8 @@ class Settings:
             "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
         )
     )
+    # "api" (Hugging Face Inference API, default) or "local" (sentence-transformers).
+    embedding_backend: str = field(default_factory=lambda: os.environ.get("EMBEDDING_BACKEND", "api"))
     # Open-weight chat model served through Hugging Face Inference Providers.
     llm_model: str = field(
         default_factory=lambda: os.environ.get("LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct")
@@ -42,6 +44,6 @@ class Settings:
     min_score: float = field(default_factory=lambda: _float("MIN_SCORE", 0.25))
     max_new_tokens: int = field(default_factory=lambda: _int("MAX_NEW_TOKENS", 512))
 
-    # Guard rails for a free CPU Space.
+    # Guard rails for a small free instance.
     max_files: int = field(default_factory=lambda: _int("MAX_FILES", 5))
     max_pages_per_file: int = field(default_factory=lambda: _int("MAX_PAGES", 200))
