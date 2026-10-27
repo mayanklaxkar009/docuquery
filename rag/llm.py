@@ -1,7 +1,8 @@
 """Answer generation.
 
-`HFInferenceLLM` calls an open-weight chat model through Hugging Face
-Inference Providers (free monthly credits with a HF account).
+`OpenAICompatibleLLM` calls any OpenAI-compatible chat API; the default is
+Groq's free tier (no card needed). `HFInferenceLLM` uses Hugging Face
+Inference Providers (needs HF credits).
 `ExtractiveAnswerer` needs no model at all: it returns the most relevant
 sentences from the retrieved chunks. The pipeline falls back to it when no
 token is configured or the API call fails, so the app always answers.
@@ -9,7 +10,10 @@ token is configured or the API call fails, so the app always answers.
 
 from __future__ import annotations
 
+import json
 import re
+import urllib.error
+import urllib.request
 from typing import Protocol
 
 from rag.chunker import split_sentences
@@ -49,6 +53,63 @@ class LLM(Protocol):
     name: str
 
     def generate(self, messages: list[dict]) -> str: ...
+
+
+class OpenAICompatibleLLM:
+    """Minimal client for `POST {base_url}/chat/completions` using only the
+    standard library, so it adds no dependencies."""
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        base_url: str = "https://api.groq.com/openai/v1",
+        max_new_tokens: int = 1024,
+        temperature: float = 0.2,
+        timeout: float = 60,
+        opener=None,
+    ):
+        self.name = model
+        self.api_key = api_key
+        self.url = base_url.rstrip("/") + "/chat/completions"
+        self.max_new_tokens = max_new_tokens
+        self.temperature = temperature
+        self.timeout = timeout
+        self._open = opener or urllib.request.urlopen
+
+    def _payload(self, messages: list[dict]) -> dict:
+        payload = {
+            "model": self.name,
+            "messages": messages,
+            "max_tokens": self.max_new_tokens,
+            "temperature": self.temperature,
+        }
+        if "gpt-oss" in self.name:
+            # Reasoning models spend tokens thinking first; keep that short.
+            payload["reasoning_effort"] = "low"
+        return payload
+
+    def generate(self, messages: list[dict]) -> str:
+        request = urllib.request.Request(
+            self.url,
+            data=json.dumps(self._payload(messages)).encode(),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "DocuQuery/1.0",
+            },
+            method="POST",
+        )
+        try:
+            with self._open(request, timeout=self.timeout) as response:
+                data = json.loads(response.read().decode())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:300]
+            raise RuntimeError(f"LLM API error {exc.code}: {detail}") from exc
+        content = (data.get("choices") or [{}])[0].get("message", {}).get("content")
+        if not content or not content.strip():
+            raise RuntimeError("model returned an empty answer")
+        return content.strip()
 
 
 class HFInferenceLLM:

@@ -3,16 +3,14 @@ which lets the tests swap in a tiny deterministic embedder.
 
 `HFInferenceEmbedder` (the default) calls the Hugging Face Inference API, so the
 app needs no PyTorch and fits in a small free web-service instance.
-`KeywordEmbedder` is a dependency-free fallback used when no HF_TOKEN is set.
+With no embedder configured the pipeline uses BM25 keyword retrieval instead.
 `SentenceTransformerEmbedder` runs the model locally if you install
 sentence-transformers yourself (set EMBEDDING_BACKEND=local).
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import re
 import time
 from typing import Protocol
 
@@ -89,35 +87,6 @@ class HFInferenceEmbedder:
         return vectors
 
 
-_WORD = re.compile(r"[a-z0-9]+")
-_STOPWORDS = frozenset(
-    "about after all also and any are because been but can could did does each for from had has have "
-    "her his how into its more most not now only other our out over she should some such than that "
-    "the their them then there these they this those through too under very was were what when where "
-    "which while who whom why will with would you your won".split()
-)
-
-
-class KeywordEmbedder:
-    """Hashed bag-of-words vectors. No model or network needed, so the app still
-    works (with keyword-level matching) when no HF_TOKEN is configured."""
-
-    # Keyword vectors give lower cosine scores than semantic ones.
-    min_score = 0.1
-
-    def __init__(self, dim: int = 4096):
-        self.dim = dim
-
-    def embed(self, texts: list[str]) -> np.ndarray:
-        out = np.zeros((len(texts), self.dim), dtype=np.float32)
-        for row, text in enumerate(texts):
-            for word in _WORD.findall(text.lower()):
-                if len(word) < 3 or word in _STOPWORDS:
-                    continue
-                h = int(hashlib.md5(word.encode()).hexdigest(), 16)
-                out[row, h % self.dim] += 1.0
-        return l2_normalise(out) if len(texts) else out
-
 
 class SentenceTransformerEmbedder:
     """Runs a sentence-transformers model locally on CPU (optional; needs
@@ -142,19 +111,21 @@ class SentenceTransformerEmbedder:
         return vectors.astype(np.float32)
 
 
-def make_embedder(model_name: str, token: str | None, backend: str = "api") -> Embedder:
-    """Pick the embedder for this deployment. With the API backend, a quick test
-    call runs at start-up; if it fails the app falls back to keyword vectors
-    instead of crashing."""
+def make_embedder(model_name: str, token: str | None, backend: str = "bm25") -> Embedder | None:
+    """Pick the embedder for this deployment, or None for BM25 retrieval.
+    For the API backend a test call runs at start-up; if it fails (no token,
+    no credits, network) the app uses BM25 instead of crashing."""
     if backend == "local":
         return SentenceTransformerEmbedder(model_name)
+    if backend != "api":
+        return None
     if not token:
-        log.warning("HF_TOKEN not set: using keyword embeddings instead of %s", model_name)
-        return KeywordEmbedder()
+        log.warning("EMBEDDING_BACKEND=api but HF_TOKEN is not set: using BM25")
+        return None
     embedder = HFInferenceEmbedder(model_name, token)
     try:
         embedder.embed(["warm-up"])
         return embedder
     except Exception as exc:  # noqa: BLE001
-        log.warning("Embedding API unavailable (%s): using keyword embeddings", exc)
-        return KeywordEmbedder()
+        log.warning("Embedding API unavailable (%s): using BM25", exc)
+        return None

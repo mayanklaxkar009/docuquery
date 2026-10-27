@@ -9,7 +9,8 @@ from pathlib import Path
 
 from rag.chunker import chunk_pages
 from rag.config import Settings
-from rag.embeddings import Embedder
+from rag.bm25 import BM25Index
+from rag.embeddings import Embedder, make_embedder
 from rag.llm import LLM, ExtractiveAnswerer, build_messages
 from rag.loader import load_pdf
 from rag.vector_store import SearchResult, VectorStore
@@ -40,32 +41,44 @@ class RAGPipeline:
         settings: Settings | None = None,
         embedder: Embedder | None = None,
         llm: LLM | None = None,
-        store: VectorStore | None = None,
+        store: VectorStore | BM25Index | None = None,
+        retrieval: str | None = None,
     ):
+        """retrieval: "dense" or "bm25". By default it is "dense" when an embedder
+        is passed in or configured (EMBEDDING_BACKEND), otherwise "bm25"."""
         self.settings = settings or Settings()
+        if embedder is None and retrieval != "bm25":
+            embedder = make_embedder(
+                self.settings.embedding_model, self.settings.hf_token, self.settings.embedding_backend
+            )
         self._embedder = embedder
-        self.store = store or VectorStore()
+        self.retrieval = retrieval or ("dense" if embedder is not None else "bm25")
+        if self.retrieval == "dense" and embedder is None:
+            raise ValueError("dense retrieval needs an embedder")
+        self.store = store or (VectorStore() if self.retrieval == "dense" else BM25Index())
         self.extractive = ExtractiveAnswerer()
         self.llm = llm if llm is not None else self._default_llm()
 
-    # -- lazy construction so importing the module is cheap ---------------
     @property
-    def embedder(self) -> Embedder:
-        if self._embedder is None:
-            from rag.embeddings import make_embedder
-
-            self._embedder = make_embedder(
-                self.settings.embedding_model, self.settings.hf_token, self.settings.embedding_backend
-            )
+    def embedder(self) -> Embedder | None:
         return self._embedder
 
-    def _default_llm(self) -> LLM | None:
-        if not self.settings.hf_token:
-            log.warning("HF_TOKEN not set: answers will be extractive only")
-            return None
-        from rag.llm import HFInferenceLLM
+    @property
+    def min_score(self) -> float:
+        return self.settings.min_score if self.retrieval == "dense" else self.settings.bm25_min_score
 
-        return HFInferenceLLM(self.settings.llm_model, self.settings.hf_token, self.settings.max_new_tokens)
+    def _default_llm(self) -> LLM | None:
+        s = self.settings
+        if s.llm_api_key:
+            from rag.llm import OpenAICompatibleLLM
+
+            return OpenAICompatibleLLM(s.llm_model, s.llm_api_key, s.llm_base_url, s.max_new_tokens)
+        if s.hf_token:
+            from rag.llm import HFInferenceLLM
+
+            return HFInferenceLLM(s.llm_model, s.hf_token, s.max_new_tokens)
+        log.warning("No LLM_API_KEY/GROQ_API_KEY or HF_TOKEN: answers will be extractive only")
+        return None
 
     # -- indexing ------------------------------------------------------------
     def index_files(self, paths: list[str | Path], reset: bool = True) -> IndexReport:
@@ -100,16 +113,20 @@ class RAGPipeline:
             report.pages += len(pages)
 
         if all_chunks:
-            vectors = self.embedder.embed([c.text for c in all_chunks])
-            self.store.add(all_chunks, vectors)
+            if self.retrieval == "dense":
+                self.store.add(all_chunks, self._embedder.embed([c.text for c in all_chunks]))
+            else:
+                self.store.add(all_chunks)
         report.chunks = len(all_chunks)
         report.seconds = time.perf_counter() - start
         return report
 
     # -- querying ------------------------------------------------------------
     def retrieve(self, question: str, k: int | None = None) -> list[SearchResult]:
-        query_vector = self.embedder.embed([question])[0]
-        return self.store.search(query_vector, k or self.settings.top_k)
+        k = k or self.settings.top_k
+        if self.retrieval == "bm25":
+            return self.store.search(question, k)
+        return self.store.search(self._embedder.embed([question])[0], k)
 
     def ask(self, question: str, history: list[dict] | None = None) -> Answer:
         question = question.strip()
@@ -119,8 +136,7 @@ class RAGPipeline:
             return Answer("Upload and index at least one PDF first.", [], "no_match")
 
         results = self.retrieve(question)
-        min_score = getattr(self.embedder, "min_score", self.settings.min_score)
-        relevant = [r for r in results if r.score >= min_score]
+        relevant = [r for r in results if r.score >= self.min_score]
         if not relevant:
             return Answer(
                 "I could not find anything relevant to that question in the uploaded documents.",
@@ -137,5 +153,5 @@ class RAGPipeline:
                 note = "The language model was unavailable, so this answer quotes the documents directly."
                 return Answer(self.extractive.answer(question, relevant), relevant, "extractive", note)
 
-        note = "No HF_TOKEN is configured, so this answer quotes the documents directly."
+        note = "No LLM API key is configured, so this answer quotes the documents directly."
         return Answer(self.extractive.answer(question, relevant), relevant, "extractive", note)
