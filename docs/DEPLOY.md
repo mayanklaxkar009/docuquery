@@ -1,22 +1,28 @@
-# Deploying DocuQuery on Render (free)
+# Deploying DocuQuery for free (Render + Groq)
 
-The app is a Gradio web server with no PyTorch, so it fits Render's free web service (512 MB RAM).
+Everything here runs on free tiers with no credit card:
+- **Render free web service** (512 MB RAM) hosts the Gradio app.
+- **BM25 retrieval** runs inside the app, so no embedding model or API is needed.
+- **Groq free API** runs the LLM (`openai/gpt-oss-120b` by default).
 
-## 1. Hugging Face token
-1. Go to https://huggingface.co/settings/tokens and choose **Create new token**, type **Fine-grained**.
-2. Tick **Make calls to Inference Providers** and create it. This token powers both the embeddings and the LLM.
+## 1. Groq API key (for LLM answers)
+1. Sign in at https://console.groq.com and open **API Keys**.
+2. Choose **Create API Key**, name it `docuquery`, and copy it (it starts with `gsk_`).
 
-Without a token the app still works: search is keyword-based and answers quote the documents.
+Without a key the app still works: answers quote the most relevant sentences from the PDF.
 
-## 2. Create the service
-1. Push this repo to GitHub.
-2. In Render choose **New → Blueprint**, pick the repo and apply. `render.yaml` creates a free Python web service.
-3. When asked for `HF_TOKEN`, paste the token (or add it later under the service's **Environment** tab).
-4. The first build takes a few minutes. The service URL looks like `https://docuquery.onrender.com`.
+## 2. Render service
+1. In Render choose **New → Web Service → Public Git Repository** and paste the GitHub URL
+   (or **New → Blueprint** to use `render.yaml` and get auto-deploys on push).
+2. Build command `pip install -r requirements.txt`, start command `python app.py`, plan **Free**.
+3. Under **Environment** add `PYTHON_VERSION=3.11.9` and `GROQ_API_KEY=<your key>`.
 
-Every push to `main` redeploys automatically. GitHub Actions runs the tests on each push.
+## 3. Keep it awake
+`.github/workflows/keepalive.yml` pings the app every 10 minutes so recruiters don't wait for a cold start.
+If your URL differs, set a repository variable `DEMO_URL` (Settings → Secrets and variables → Actions → Variables).
+GitHub pauses scheduled workflows after 60 days without commits; re-enable it from the Actions tab.
 
 ## Troubleshooting
-- **First request is slow.** Free Render services sleep after 15 minutes idle and take about a minute to wake.
-- **Footer says "keyword matching".** `HF_TOKEN` is missing or the embedding API was unreachable at start-up; set the token and redeploy.
-- **Answers are quotes, not prose.** The LLM call failed (usually token permissions or exhausted free credits). Try another model with the `LLM_MODEL` variable, e.g. `meta-llama/Llama-3.2-3B-Instruct`.
+- **Footer says "extractive mode".** `GROQ_API_KEY` is missing; add it and redeploy.
+- **Answers suddenly become quotes.** Groq's free rate limit was hit (per minute or per day); it recovers on its own.
+- **Use another provider.** Set `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL` for any OpenAI-compatible API.
