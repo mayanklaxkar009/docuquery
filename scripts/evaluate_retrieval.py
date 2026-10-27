@@ -1,10 +1,10 @@
-"""Measure retrieval quality on the sample document with the real embedding model.
+"""Measure retrieval quality on the sample document with the configured retriever.
 
 For each test question we know which page holds the answer. We report:
   hit rate @k  - share of questions whose answer page appears in the top-k chunks
   MRR          - mean reciprocal rank of the first chunk from the answer page
 
-Run: python scripts/evaluate_retrieval.py   (downloads the embedding model once)
+Run: python scripts/evaluate_retrieval.py   (BM25 by default; EMBEDDING_BACKEND=local for dense)
 Try other settings: CHUNK_SIZE=500 TOP_K=3 python scripts/evaluate_retrieval.py
 """
 
@@ -47,7 +47,7 @@ def main() -> None:
         pdf.parent.mkdir(exist_ok=True)
         build(pdf)
 
-    settings = Settings(hf_token=None)
+    settings = Settings(llm_api_key=None)
     pipeline = RAGPipeline(settings)
     report = pipeline.index_files([pdf])
     print(f"Indexed {report.chunks} chunks (size={settings.chunk_size}, overlap={settings.chunk_overlap})\n")
@@ -61,7 +61,8 @@ def main() -> None:
         hits += rank is not None
         reciprocal_ranks.append(1 / rank if rank else 0.0)
         mark = f"rank {rank}" if rank else "MISS"
-        print(f"{mark:>7}  top score {results[0].score:.2f}  {question}")
+        top = results[0].score if results else 0.0
+        print(f"{mark:>7}  top score {top:.2f}  {question}")
 
     print(f"\nHit rate @{k}: {hits / len(QUESTIONS):.0%}")
     print(f"MRR:         {sum(reciprocal_ranks) / len(QUESTIONS):.2f}")
